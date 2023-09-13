@@ -51,13 +51,14 @@ from compressai.transforms.functional import ycbcr2rgb, yuv_420_to_444
 
 from .codecs import HM, VTM, Codec, x264, x265
 
+
 codec_classes = [x264, x265, VTM, HM]
 
 
 Frame = Union[Tuple[Tensor, Tensor, Tensor], Tuple[Tensor, ...]]
 
 
-def func(codec, i, filepath, qp, outputdir, inputdir, cuda, force, dry_run):
+def func(codec, i, filepath, qp, outputdir, inputdir, cuda, force, dry_run, vmaf):
     binpath = codec.get_bin_path(filepath, qp, outputdir, inputdir)
     encode_cmd = codec.get_encode_cmd(filepath, qp, binpath)
 
@@ -87,7 +88,7 @@ def func(codec, i, filepath, qp, outputdir, inputdir, cuda, force, dry_run):
             run_cmdline(decode_cmd)
 
             # compute metrics
-            metrics = evaluate(filepath, Path(f.name), binpath, cuda)
+            metrics = evaluate(filepath, Path(f.name), binpath, cuda, vmaf)
             output = {
                 "source": filepath.stem,
                 "name": codec.name_config(),
@@ -170,6 +171,7 @@ def evaluate(
     dec_seq_path: Path,
     bitstream_path: Path,
     cuda: bool = False,
+    vmaf: bool = False,
 ) -> Dict[str, Any]:
     # load original and decoded sequences
     org_seq = RawVideoSequence.from_file(str(org_seq_path))
@@ -219,6 +221,32 @@ def evaluate(
     seq_results["psnr-yuv"] = (
         4 * seq_results["psnr-y"] + seq_results["psnr-u"] + seq_results["psnr-v"]
     ) / 6
+
+    # compute vmaf for sequence
+    if vmaf:
+        from vmaf.core.quality_runner import VmafQualityRunner, VmafnegQualityRunner
+        from vmaf.core.asset import Asset
+        from vmaf.config import VmafConfig
+        from vmaf.tools.misc import get_file_name_without_extension
+
+        asset = Asset(
+            dataset="cmd",
+            content_id=abs(hash(get_file_name_without_extension(org_seq_path)))
+            % (10**16),
+            asset_id=abs(hash(get_file_name_without_extension(org_seq_path))) % (10**16),
+            workdir_root=VmafConfig.workdir_path(),
+            ref_path=org_seq_path,
+            dis_path=dec_seq_path,
+            asset_dict={"width": 1920, "height": 1080, "yuv_type": "yuv420p"}, # need to be changed
+        )
+        vmaf_runner = VmafQualityRunner([asset], None) 
+        vmaf_runner.run()
+        seq_results["vmaf"] = vmaf_runner.results[0].to_dict()["aggregate"]["VMAF_score"]
+
+        vmaf_neg_runner = VmafnegQualityRunner([asset], None)
+        vmaf_neg_runner.run()
+        seq_results["vmaf-neg"] = vmaf_neg_runner.results[0].to_dict()["aggregate"]["VMAFNEG_score"]
+
     for k, v in seq_results.items():
         if isinstance(v, torch.Tensor):
             seq_results[k] = v.item()
@@ -250,6 +278,7 @@ def collect(
             args["cuda"],
             args["force"],
             args["dry_run"],
+            args["vmaf"],
         )
         for i, q in enumerate(qps)
         for f in filepaths
@@ -312,6 +341,9 @@ def create_parser() -> (
         help="list of quality/quantization parameter. (example: '22,27,32,37') (default: %(default)s)",
     )
     parent_parser.add_argument("--cuda", action="store_true", help="use cuda")
+    parent_parser.add_argument(
+        "--vmaf", action="store_true", help="add vmaf metric to result"
+    )
     subparsers = parser.add_subparsers(dest="codec", help="video codec")
     subparsers.required = True
     return parser, parent_parser, subparsers
