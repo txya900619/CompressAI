@@ -229,14 +229,16 @@ def evaluate(
         from vmaf.config import VmafConfig
         from vmaf.tools.misc import get_file_name_without_extension
 
+        org_seq_path_str = org_seq_path.as_posix()
+        dec_seq_path_str = dec_seq_path.as_posix()
         asset = Asset(
             dataset="cmd",
-            content_id=abs(hash(get_file_name_without_extension(org_seq_path)))
+            content_id=abs(hash(get_file_name_without_extension(org_seq_path_str)))
             % (10**16),
-            asset_id=abs(hash(get_file_name_without_extension(org_seq_path))) % (10**16),
+            asset_id=abs(hash(get_file_name_without_extension(org_seq_path_str))) % (10**16),
             workdir_root=VmafConfig.workdir_path(),
-            ref_path=org_seq_path,
-            dis_path=dec_seq_path,
+            ref_path=org_seq_path_str,
+            dis_path=dec_seq_path_str,
             asset_dict={"width": 1920, "height": 1080, "yuv_type": "yuv420p"}, # need to be changed
         )
         vmaf_runner = VmafQualityRunner([asset], None) 
