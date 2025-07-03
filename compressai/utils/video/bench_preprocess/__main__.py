@@ -30,10 +30,10 @@
 import argparse
 import json
 import multiprocessing as mp
+import os
 import subprocess
 import sys
 import tempfile
-
 from collections import defaultdict
 from itertools import starmap
 from pathlib import Path
@@ -41,7 +41,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-
 from pytorch_msssim import ms_ssim  # type: ignore
 from torch import Tensor
 from torch.utils.model_zoo import tqdm
@@ -57,7 +56,19 @@ codec_classes = [x264, x265, VTM, HM]
 Frame = Union[Tuple[Tensor, Tensor, Tensor], Tuple[Tensor, ...]]
 
 
-def func(codec, i, filepath, qp, outputdir, inputdir, ground_truth_dir, cuda, force, dry_run, vmaf):
+def func(
+    codec,
+    i,
+    filepath,
+    qp,
+    outputdir,
+    inputdir,
+    ground_truth_dir,
+    cuda,
+    force,
+    dry_run,
+    vmaf,
+):
     binpath = codec.get_bin_path(filepath, qp, outputdir, inputdir)
     encode_cmd = codec.get_encode_cmd(filepath, qp, binpath)
 
@@ -86,7 +97,7 @@ def func(codec, i, filepath, qp, outputdir, inputdir, ground_truth_dir, cuda, fo
             decode_cmd = codec.get_decode_cmd(binpath, f.name, filepath)
             run_cmdline(decode_cmd)
 
-            ground_truth_filepath = ground_truth_dir / filepath.relative_to(inputdir) 
+            ground_truth_filepath = ground_truth_dir / filepath.relative_to(inputdir)
 
             # compute metrics
             metrics = evaluate(ground_truth_filepath, Path(f.name), binpath, cuda, vmaf)
@@ -225,9 +236,9 @@ def evaluate(
 
     # compute vmaf for sequence
     if vmaf:
-        from vmaf.core.quality_runner import VmafQualityRunner, VmafnegQualityRunner
-        from vmaf.core.asset import Asset
         from vmaf.config import VmafConfig
+        from vmaf.core.asset import Asset
+        from vmaf.core.quality_runner import VmafnegQualityRunner, VmafQualityRunner
         from vmaf.tools.misc import get_file_name_without_extension
 
         org_seq_path_str = org_seq_path.as_posix()
@@ -236,19 +247,28 @@ def evaluate(
             dataset="cmd",
             content_id=abs(hash(get_file_name_without_extension(org_seq_path_str)))
             % (10**16),
-            asset_id=abs(hash(get_file_name_without_extension(org_seq_path_str))) % (10**16),
+            asset_id=abs(hash(get_file_name_without_extension(org_seq_path_str)))
+            % (10**16),
             workdir_root=VmafConfig.workdir_path(),
             ref_path=org_seq_path_str,
             dis_path=dec_seq_path_str,
-            asset_dict={"width": 1920, "height": 1080, "yuv_type": "yuv420p"}, # need to be changed
+            asset_dict={
+                "width": 1920,
+                "height": 1080,
+                "yuv_type": "yuv420p",
+            },  # need to be changed
         )
-        vmaf_runner = VmafQualityRunner([asset], None) 
+        vmaf_runner = VmafQualityRunner([asset], None)
         vmaf_runner.run()
-        seq_results["vmaf"] = vmaf_runner.results[0].to_dict()["aggregate"]["VMAF_score"]
+        seq_results["vmaf"] = vmaf_runner.results[0].to_dict()["aggregate"][
+            "VMAF_score"
+        ]
 
         vmaf_neg_runner = VmafnegQualityRunner([asset], None)
         vmaf_neg_runner.run()
-        seq_results["vmaf-neg"] = vmaf_neg_runner.results[0].to_dict()["aggregate"]["VMAFNEG_score"]
+        seq_results["vmaf-neg"] = vmaf_neg_runner.results[0].to_dict()["aggregate"][
+            "VMAFNEG_score"
+        ]
 
     for k, v in seq_results.items():
         if isinstance(v, torch.Tensor):
@@ -258,7 +278,7 @@ def evaluate(
 
 def collect(
     dataset: Path,
-    inputdataset:Path,
+    inputdataset: Path,
     codec_class: Codec,
     outputdir: Path,
     qps: List[int],
@@ -323,7 +343,9 @@ def create_parser() -> (
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument("dataset", type=str, help="ground truth sequences directory")
+    parent_parser.add_argument(
+        "dataset", type=str, help="ground truth sequences directory"
+    )
     parent_parser.add_argument("inputdataset", type=str, help="preprocessed sequences")
     parent_parser.add_argument("outputdir", type=str, help="output directory")
     parent_parser.add_argument("-n", "--dry-run", action="store_true", help="dry run")
@@ -389,7 +411,7 @@ def main(args: Any = None) -> None:
     )
 
     output = {
-        "name": codec_class.name_config(),
+        "name": os.path.basename(outputdir),
         "description": codec_class.description,
         "results": results,
     }
