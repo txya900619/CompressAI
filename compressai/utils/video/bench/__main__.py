@@ -49,10 +49,9 @@ from torch.utils.model_zoo import tqdm
 from compressai.datasets.rawvideo import RawVideoSequence, VideoFormat
 from compressai.transforms.functional import ycbcr2rgb, yuv_420_to_444
 
-from .codecs import HM, VTM, Codec, x264, x265
+from .codecs import AV1, HM, VTM, VVC, Codec, x264, x265
 
-
-codec_classes = [x264, x265, VTM, HM]
+codec_classes = [x264, x265, VTM, HM, VVC, AV1]
 
 
 Frame = Union[Tuple[Tensor, Tensor, Tensor], Tuple[Tensor, ...]]
@@ -224,9 +223,9 @@ def evaluate(
 
     # compute vmaf for sequence
     if vmaf:
-        from vmaf.core.quality_runner import VmafQualityRunner, VmafnegQualityRunner
-        from vmaf.core.asset import Asset
         from vmaf.config import VmafConfig
+        from vmaf.core.asset import Asset
+        from vmaf.core.quality_runner import VmafnegQualityRunner, VmafQualityRunner
         from vmaf.tools.misc import get_file_name_without_extension
 
         org_seq_path_str = org_seq_path.as_posix()
@@ -235,19 +234,28 @@ def evaluate(
             dataset="cmd",
             content_id=abs(hash(get_file_name_without_extension(org_seq_path_str)))
             % (10**16),
-            asset_id=abs(hash(get_file_name_without_extension(org_seq_path_str))) % (10**16),
+            asset_id=abs(hash(get_file_name_without_extension(org_seq_path_str)))
+            % (10**16),
             workdir_root=VmafConfig.workdir_path(),
             ref_path=org_seq_path_str,
             dis_path=dec_seq_path_str,
-            asset_dict={"width": 1920, "height": 1080, "yuv_type": "yuv420p"}, # need to be changed
+            asset_dict={
+                "width": 1920,
+                "height": 1080,
+                "yuv_type": "yuv420p",
+            },  # need to be changed
         )
-        vmaf_runner = VmafQualityRunner([asset], None) 
+        vmaf_runner = VmafQualityRunner([asset], None)
         vmaf_runner.run()
-        seq_results["vmaf"] = vmaf_runner.results[0].to_dict()["aggregate"]["VMAF_score"]
+        seq_results["vmaf"] = vmaf_runner.results[0].to_dict()["aggregate"][
+            "VMAF_score"
+        ]
 
         vmaf_neg_runner = VmafnegQualityRunner([asset], None)
         vmaf_neg_runner.run()
-        seq_results["vmaf-neg"] = vmaf_neg_runner.results[0].to_dict()["aggregate"]["VMAFNEG_score"]
+        seq_results["vmaf-neg"] = vmaf_neg_runner.results[0].to_dict()["aggregate"][
+            "VMAFNEG_score"
+        ]
 
     for k, v in seq_results.items():
         if isinstance(v, torch.Tensor):
@@ -312,9 +320,9 @@ def collect(
     return out
 
 
-def create_parser() -> (
-    Tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse._SubParsersAction]
-):
+def create_parser() -> Tuple[
+    argparse.ArgumentParser, argparse.ArgumentParser, argparse._SubParsersAction
+]:
     parser = argparse.ArgumentParser(
         description="Video codec baselines.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

@@ -34,6 +34,7 @@ import os
 import subprocess
 import sys
 import tempfile
+
 from collections import defaultdict
 from itertools import starmap
 from pathlib import Path
@@ -41,6 +42,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+
 from pytorch_msssim import ms_ssim  # type: ignore
 from torch import Tensor
 from torch.utils.model_zoo import tqdm
@@ -48,9 +50,9 @@ from torch.utils.model_zoo import tqdm
 from compressai.datasets.rawvideo import RawVideoSequence, VideoFormat
 from compressai.transforms.functional import ycbcr2rgb, yuv_420_to_444
 
-from .codecs import HM, VTM, Codec, x264, x265
+from .codecs import AV1, HM, VTM, VVC, Codec, x264, x265
 
-codec_classes = [x264, x265, VTM, HM]
+codec_classes = [x264, x265, VTM, HM, VVC, AV1]
 
 
 Frame = Union[Tuple[Tensor, Tensor, Tensor], Tuple[Tensor, ...]]
@@ -335,9 +337,9 @@ def collect(
     return out
 
 
-def create_parser() -> (
-    Tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse._SubParsersAction]
-):
+def create_parser() -> Tuple[
+    argparse.ArgumentParser, argparse.ArgumentParser, argparse._SubParsersAction
+]:
     parser = argparse.ArgumentParser(
         description="Video codec baselines.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

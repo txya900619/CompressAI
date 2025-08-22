@@ -182,18 +182,23 @@ class x265(x264):
         info = get_raw_video_file_info(filepath.stem)
         cmd = [
             "ffmpeg",
-            "-s:v",
+            "-y",
+            "-s",
             f"{info['width']}x{info['height']}",
             "-i",
             filepath,
+            "-g",
+            10,
             "-c:v",
-            "hevc",
+            "libx265",
             "-crf",
             qp,
-            # "-preset",
-            # self.preset,
+            "-preset",
+            self.preset,
             "-x265-params",
-            '"bframes=0:keyint=12"',
+            "bframes=0",
+            "-sc_threshold",
+            "0",
             "-tune",
             self.tune,
             "-pix_fmt",
@@ -296,8 +301,8 @@ class VTM(Codec):
             info["framerate"],
             "-f",
             num_frames,
-            f'--InputBitDepth={info["bitdepth"]}',
-            f'--OutputBitDepth={info["bitdepth"]}',
+            f"--InputBitDepth={info['bitdepth']}",
+            f"--OutputBitDepth={info['bitdepth']}",
             # "--ConformanceWindowMode=1",
         ]
 
@@ -390,8 +395,8 @@ class HM(VTM):
             info["framerate"],
             "-f",
             num_frames,
-            f'--InputBitDepth={info["bitdepth"]}',
-            f'--OutputBitDepth={info["bitdepth"]}',
+            f"--InputBitDepth={info['bitdepth']}",
+            f"--OutputBitDepth={info['bitdepth']}",
             # "--ConformanceWindowMode=1",
         ]
 
@@ -408,4 +413,158 @@ class HM(VTM):
     ) -> List[Any]:
         output_bitdepth = get_raw_video_file_info(input_filepath.stem)["bitdepth"]
         cmd = [self.decoder_path, "-b", binpath, "-o", decpath, "-d", output_bitdepth]
+        return cmd
+
+
+class VVC(Codec):
+    """fraunhoferhhi's faster VVC encoder and decoder"""
+
+    binext = "266"
+    preset = ""
+
+    @property
+    def name(self):
+        return "VVC"
+
+    @property
+    def description(self):
+        return "fraunhoferhhi's faster VVC encoder and decoder"
+
+    def name_config(self):
+        return f"{self.name}-{self.preset}"
+
+    @classmethod
+    def add_parser_args(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("-p", "--preset", default="medium", help="preset")
+
+    def set_args(self, args):
+        args = super().set_args(args)
+        self.preset = args.preset
+        return args
+
+    def get_encode_cmd(self, filepath: Path, qp, binpath) -> List[Any]:
+        info = get_raw_video_file_info(filepath.stem)
+        cmd = [
+            "vvencapp",
+            "--preset",
+            self.preset,
+            "-i",
+            filepath,
+            "-s",
+            f"{info['width']}x{info['height']}",
+            "--framerate",
+            info["framerate"],
+            "--qp",
+            qp,
+            "--qpa",
+            "0",
+            "--threads",
+            "8",
+            "--internal-bitdepth",
+            "8",
+            "-o",
+            binpath,
+        ]
+
+        return cmd
+
+    def get_bin_path(self, filepath: Path, qp, binpath: str, inputdir: Path) -> Path:
+        bin_subdir = Path(binpath) / Path(filepath).parent.relative_to(inputdir)
+        bin_subdir.mkdir(parents=True, exist_ok=True)
+        return bin_subdir / (
+            f"{filepath.stem}_{self.name}_{self.preset}_qp{qp}.{self.binext}"
+        )
+
+    def get_decode_cmd(
+        self, binpath: Path, decpath: Path, input_filepath: Path
+    ) -> List[Any]:
+        cmd = ["vvdecapp", "-b", binpath, "-o", decpath]
+        return cmd
+
+
+class AV1(Codec):
+    preset = ""
+    tune = ""
+
+    @property
+    def name(self):
+        return "AV1"
+
+    @property
+    def description(self):
+        rv = run_command(
+            [
+                "/home/wayne/ffmpeg-n7.1-latest-linux64-lgpl-7.1/bin/ffmpeg",
+                "-version",
+            ]
+        )
+        ffmpeg_version = rv.split()[2]
+        return (
+            f"{self.name} {self.preset}, {self.tune}, ffmpeg version {ffmpeg_version}"
+        )
+
+    def name_config(self):
+        return f"{self.name}-{self.preset}-tune-{self.tune}"
+
+    def add_parser_args(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("-p", "--preset", default="10", help="preset")
+        parser.add_argument(
+            "--tune",
+            default="1",
+            help="tune encoder for psnr or ssim (default: %(default)s)",
+        )
+
+    def set_args(self, args):
+        args = super().set_args(args)
+        self.preset = args.preset
+        self.tune = args.tune
+        return args
+
+    def get_bin_path(self, filepath: Path, qp, binpath: str, inputdir: Path) -> Path:
+        bin_subdir = Path(binpath) / Path(filepath).parent.relative_to(inputdir)
+        bin_subdir.mkdir(parents=True, exist_ok=True)
+        return bin_subdir / (
+            f"{filepath.stem}_{self.name}_{self.preset}_tune-{self.tune}_qp{qp}.mp4"
+        )
+
+    def get_encode_cmd(self, filepath: Path, qp: int, binpath: Path) -> List[Any]:
+        info = get_raw_video_file_info(filepath.stem)
+        cmd = [
+            "/home/wayne/ffmpeg-n7.1-latest-linux64-lgpl-7.1/bin/ffmpeg",
+            "-y",
+            "-s",
+            f"{info['width']}x{info['height']}",
+            "-i",
+            filepath,
+            "-g",
+            10,
+            "-c:v",
+            "libsvtav1",
+            "-crf",
+            qp,
+            "-preset",
+            self.preset,
+            "-tune",
+            self.tune,
+            "-pix_fmt",
+            "yuv420p",
+            "-threads",
+            "4",
+            binpath,
+        ]
+        return cmd
+
+    def get_decode_cmd(
+        self, binpath: Path, decpath: Path, input_filepath: Path
+    ) -> List[Any]:
+        del input_filepath  # unused here
+        cmd = [
+            "/home/wayne/ffmpeg-n7.1-latest-linux64-lgpl-7.1/bin/ffmpeg",
+            "-y",
+            "-i",
+            binpath,
+            "-pix_fmt",
+            "yuv420p",
+            decpath,
+        ]
         return cmd
